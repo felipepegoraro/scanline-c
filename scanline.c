@@ -1,11 +1,44 @@
+/*
+                              Felipe Pegoraro - 837486 - 28/03/2025
+
+Este código implementa uma aplicação gráfica simples utilizando raylib para desenhar e preencher
+polígonos na tela. a lógica central se baseia na interação do usuário com a tela para adicionar
+pontos, desenhar arestas entre os pontos e preencher o polígono formado usando a técnica de
+preenchimento por linha de varredura (scanline).
+
+Funções com prefixo `m` são funções próprias:
+- `m_DrawButton`: desenha botão
+- `m_DrawPoints`: desenha todos os pontos na tela
+- `m_DrawPointCount`: exibe o número de pontos na tela
+- `m_DrawBoard`: desenha a lousa onde os pontos podem ser adicionados
+- `m_ClearBoard`: limpa todos os pontos e arestas
+
+IMPORTANTE ===============================
+- `m_DrawLine`: desenha uma linha entre dois pontos usando o algoritmo de Bresenham
+
+- `m_PaintPointOnBoard`: adiciona um ponto na posição do mouse
+- `m_ClickCallback`: click handler --> função callback associada
+- `m_DrawEdges`: desenha as arestas do polígono conectando os pontos
+
+IMPORTANTE ===============================
+- `m_ScanlineFill`: preenche o polígono usando a técnica de scanline
+   |    internamente scanline usa m_DrawLine.
+   |    m_DrawLine NÃO É FUNÇÃO PRONTA.
+   |    m_DrawLine usa DrawPixel da lib raylib.
+   |    m_DrawLine usa algoritmo de Bresenham para pintar a linha com DrawPixel
+
+- `m_PressShiftMousePos`: ajusta a posição do mouse quando a tecla shift é pressionada.
+- `m_CompletePolygon`: fecha o polígono e preenche com a cor definida.
+*/
+
+
 #include "raylib.h"
-#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 
 #define BTN_WIDTH 180
 #define BTN_HEIGHT 50
-#define BTN_GAP 10
+#define GAP 10
 #define BTN_RADIUS 0.3f
 #define BTN_SEGMENTS 10
 
@@ -29,9 +62,10 @@ typedef struct {
     Color color;
 } Point;
 
+int numPointsOnScreen = 0;
+
 Vector2 mousePos = {0, 0};
 Point points[MAX_NUM_POINTS] = {};
-int numPointsOnScreen = 0;
 
 void m_DrawButton(Button button) {
     DrawRectangleRounded(button.bounds, BTN_RADIUS, BTN_SEGMENTS, button.color);
@@ -63,15 +97,7 @@ void m_ClearBoard(void){
 }
 
 
-/* 
-    FUNÇAO PARA DESENHAR A LINHA ENTRE DOIS PONTOS NA TELA.
-
-    EM VEZ DE USAR A FUNÇÃO PRONTA DRAWLINEV, CRIEI A FUNÇÃO 
-    m_DrawLine POIS ESSA USA UMA FUNÇÃO MAIS BÁSICA.
-    ESSA FUNÇÃO USA DRAW PIXEL QUE É SEMELHANTE AO WRITEPIXEL 
-    DRAW PIXEL RECEBE OS PARAMETROS POSICAO X, Y E A COR DO PIXEL 
-    A SER PINTADO.
-*/
+// FUNÇAO PARA DESENHAR A LINHA ENTRE DOIS PONTOS NA TELA.
 void m_DrawLine(Vector2 start, Vector2 end, Color color){
     int x1 = (int)start.x;
     int y1 = (int)start.y;
@@ -84,7 +110,9 @@ void m_DrawLine(Vector2 start, Vector2 end, Color color){
     int sy = (y1 < y2) ? GREATER_THAN : LESS_THAN;
     int err = dx - dy;
 
-    // WRITE PIXEL
+    // VEJA QUE NÃO USA FUNÇÃO DE DRAWLINE PRONTA.
+    // USA A FUNÇÃO MAIS PRIMITIVA => DrawPixel(x,y,color) <=
+    // SEMELHANTE AO write_pixel(x,y,color);
     while (true) {
         DrawPixel(x1, y1, color);
 
@@ -128,61 +156,57 @@ void m_DrawEdges(void) {
     }
 }
 
-int m_ComparePoints(const void *a, const void *b) {
-    Point *pointA = (Point *)a;
-    Point *pointB = (Point *)b;
+int m_CompareIntersection(const void *a, const void *b) {
+    int x1 = *(int *)a;
+    int x2 = *(int *)b;
 
-    float cx = 0.0f, cy = 0.0f;
-    for (int i = 0; i < numPointsOnScreen; i++) {
-        cx += points[i].position.x;
-        cy += points[i].position.y;
-    }
-    cx /= numPointsOnScreen;
-    cy /= numPointsOnScreen;
-
-    float angleA = atan2f(pointA->position.y - cy, pointA->position.x - cx);
-    float angleB = atan2f(pointB->position.y - cy, pointB->position.x - cx);
-
-    if (angleA < angleB) return LESS_THAN;
-    if (angleA > angleB) return GREATER_THAN;
-
+    if (x1 < x2) return LESS_THAN;
+    if (x1 > x2) return GREATER_THAN;
     return EQUAL;
 }
 
-int m_CompareIntegers(const void *a, const void *b) {
-    return (*(int*)a - *(int*)b);
-}
 
+// PREENCHE UM POLÍGONO UTILIZANDO A TÉCNICA DE SCANLINE
 void m_ScanlineFill(void) {
-    qsort(points, numPointsOnScreen, sizeof(Point), m_ComparePoints);
+    if (numPointsOnScreen < 3) return;
 
-    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    // percorre y=0 --> y=ymax
+    for (int y = 0; y < SCREEN_HEIGHT-(GAP*2-BTN_HEIGHT); y++) {
         int intersections[MAX_NUM_POINTS];
-        int numIntersections = 0;
+        int intersectionCount = 0;
 
+        // para cada ponto...
         for (int i = 0; i < numPointsOnScreen; i++) {
-            int next = (i + 1) % numPointsOnScreen;
-
             Vector2 p1 = points[i].position;
-            Vector2 p2 = points[next].position;
+            Vector2 p2 = points[(i + 1) % numPointsOnScreen].position;
 
-            if (((p1.y > y) != (p2.y > y)) && (y != (int)p1.y || y != (int)p2.y)) {
-                float xIntersection = p1.x + (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y);
-                intersections[numIntersections++] = (int)xIntersection;
+            // ...verifica se y intercepta ele
+            if ((p1.y <= y && p2.y > y) || (p1.y > y && p2.y <= y)) {
+                float xIntersect = p1.x + (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y);
+                if (xIntersect >= 0 && xIntersect < SCREEN_WIDTH-GAP*2) {
+                    intersections[intersectionCount++] = (int)xIntersect;
+                }
             }
         }
 
-        qsort(intersections, numIntersections, sizeof(int), m_CompareIntegers);
+        // ordena as interseções em ordem crescente de x
+        qsort(intersections, intersectionCount, sizeof(int), m_CompareIntersection);
 
-        for (int i = 0; i < numIntersections; i += 2) {
-            for (int x = intersections[i]; x < intersections[i + 1]; x++) {
-                DrawPixel(x, y, DARKGRAY); 
-            }
+        // preenche os pixels entre os pares de interseções
+        for (int i = 0; i < intersectionCount; i += 2) {
+            int xStart = intersections[i];
+            int xEnd = intersections[i + 1];
+
+            m_DrawLine((Vector2){xStart, (float)y}, (Vector2){xEnd, (float)y}, DARKGRAY);
         }
     }
 }
 
+
+
 void m_PressShiftMousePos(){
+    if (numPointsOnScreen == 0) return;
+
     if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)){
         int mx = mousePos.x;
         int my = mousePos.y;
@@ -201,26 +225,26 @@ void m_PressShiftMousePos(){
 }
 
 
-void m_FinalizaEdges(void){
-    if (numPointsOnScreen > 1)
+void m_CompletePolygon(void){
+    if (numPointsOnScreen > 1) {
         m_DrawLine(points[numPointsOnScreen-1].position, points[0].position, DARKGRAY);
-    if (numPointsOnScreen > 2) m_ScanlineFill();
+        m_ScanlineFill();
+    }
 }
-
 
 int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Scanline Raylib");
 
     Button clearButton = (Button){
-        .bounds = {BTN_GAP, BTN_GAP, BTN_WIDTH, BTN_HEIGHT}, 
+        .bounds = {GAP, GAP, BTN_WIDTH, BTN_HEIGHT}, 
         .color  = RED,
         .label  = "Clear"
     };
 
     Button fillButton = (Button){
         .bounds = { 
-            clearButton.bounds.x + BTN_GAP + BTN_WIDTH,
-            BTN_GAP,
+            clearButton.bounds.x + GAP + BTN_WIDTH,
+            GAP,
             BTN_WIDTH,
             BTN_HEIGHT
         }, 
@@ -228,11 +252,13 @@ int main(void) {
         .label = "Fill"
     };
 
+    // tamanho fixo por enquanto
+    // basta colocar dentro do loop e usar getScreen(Width|Height)()
     Rectangle board = (Rectangle){
-        .x = BTN_GAP,
-        .y = clearButton.bounds.y + BTN_HEIGHT + BTN_GAP,
-        .width = GetScreenWidth() - 2 * BTN_GAP,
-        .height = GetScreenHeight() - (clearButton.bounds.y + BTN_HEIGHT + 2 * BTN_GAP)
+        .x = GAP,
+        .y = clearButton.bounds.y + BTN_HEIGHT + GAP,
+        .width = SCREEN_WIDTH - 2 * GAP,
+        .height = SCREEN_HEIGHT - (clearButton.bounds.y + BTN_HEIGHT + 2 * GAP)
     };
 
     while (!WindowShouldClose()) {
@@ -246,14 +272,15 @@ int main(void) {
         BeginDrawing();
             ClearBackground(LIGHTGRAY);
         
-            m_DrawPointCount((Vector2){GetScreenWidth() - 40, fillButton.bounds.y + (int)(BTN_HEIGHT / 2) - BTN_GAP});
+            m_DrawPointCount((Vector2){ SCREEN_WIDTH-40, (int)(BTN_HEIGHT / 2) });
+            
             m_DrawBoard(&board);
             m_DrawButton(clearButton);
             m_DrawButton(fillButton);
 
             m_DrawPoints();
 
-            m_ClickCallback(mousePos, &fillButton.bounds, m_FinalizaEdges);
+            m_ClickCallback(mousePos, &fillButton.bounds, m_CompletePolygon);
             if (numPointsOnScreen > 1) m_DrawEdges();
         EndDrawing();
     }

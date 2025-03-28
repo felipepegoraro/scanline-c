@@ -82,6 +82,7 @@ const Color COLORS[] = {
 const unsigned colorsNum = sizeof(COLORS)/sizeof(Color);
 Color selectedColor = COLORS[6];
 
+bool shouldClose = false;
 
 void m_DrawButton(Button button) {
     bool isHovered = CheckCollisionPointRec(GetMousePosition(), button.bounds);
@@ -91,7 +92,7 @@ void m_DrawButton(Button button) {
 
     DrawText(
         button.label,
-        button.bounds.x + (int)(BTN_WIDTH/2) - (int)(MeasureText(button.label, FONT_SIZE)/2),
+        button.bounds.x + (int)(button.bounds.width/2) - (int)(MeasureText(button.label, FONT_SIZE)/2),
         button.bounds.y + (button.bounds.height / 2) - 10,
         FONT_SIZE, WHITE
     );
@@ -130,6 +131,7 @@ void m_ClearBoard(void){
     }
 }
 
+void m_CloseWindow(void){ shouldClose = true; }
 
 // FUNÇAO PARA DESENHAR A LINHA ENTRE DOIS PONTOS NA TELA.
 void m_DrawLine(Vector2 start, Vector2 end, Color color){
@@ -315,6 +317,17 @@ int main(void) {
     
     Vector2 colorPickerPosition = { fillButton.bounds.x + GAP + BTN_WIDTH, GAP };
 
+    Button closeButton = (Button){
+        .bounds = { 
+            SCREEN_WIDTH- GAP*5,
+            GAP*2-5,
+            (int)(BTN_WIDTH/4),
+            (int)(BTN_HEIGHT/2)+GAP
+        }, 
+        .color = COLORS[6],
+        .label = "x"
+    };
+
     // tamanho fixo por enquanto
     // basta colocar dentro do loop e usar getScreen(Width|Height)()
     Rectangle board = (Rectangle){
@@ -332,15 +345,19 @@ int main(void) {
             m_PressShiftMousePos();
             m_ClickCallback(mousePos, &clearButton.bounds, m_ClearBoard);
             m_ClickCallback(mousePos, &board, m_PaintPointOnBoard);
+            m_ClickCallback(mousePos, &closeButton.bounds, m_CloseWindow);
         }
+
+        if (shouldClose) break;
 
         BeginDrawing();
             ClearBackground(BLACK);
         
-            m_DrawPointCount((Vector2){ SCREEN_WIDTH-40, (int)(BTN_HEIGHT / 2) });
+            m_DrawPointCount((Vector2){ SCREEN_WIDTH-80, (int)(BTN_HEIGHT / 2) });
             m_DrawBoard(&board);
             m_DrawButton(clearButton);
             m_DrawButton(fillButton);
+            m_DrawButton(closeButton);
             m_DrawColorPicker(colorPickerPosition);
             m_DrawPoints();
 

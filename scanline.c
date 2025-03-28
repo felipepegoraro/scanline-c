@@ -29,6 +29,8 @@ IMPORTANTE ===============================
 
 - `m_PressShiftMousePos`: ajusta a posição do mouse quando a tecla shift é pressionada.
 - `m_CompletePolygon`: fecha o polígono e preenche com a cor definida.
+- `m_DrawColorPicker`: desenha um picker de cor
+- `m_GetSelectedColor`: seleciona e aplica a cor do picker
 */
 
 
@@ -36,9 +38,10 @@ IMPORTANTE ===============================
 #include <stdlib.h>
 #include <stdio.h>
 
-#define BTN_WIDTH 180
-#define BTN_HEIGHT 50
 #define GAP 10
+
+#define BTN_WIDTH 150
+#define BTN_HEIGHT 50
 #define BTN_RADIUS 0.3f
 #define BTN_SEGMENTS 10
 
@@ -51,6 +54,11 @@ IMPORTANTE ===============================
 #define GREATER_THAN 1
 #define EQUAL 0
 
+#define COLOR_PICKER_SIZE 100
+#define COLOR_BOX_SIZE 25
+
+#define FONT_SIZE 20
+
 typedef struct {
     Rectangle bounds;
     Color color;
@@ -62,32 +70,58 @@ typedef struct {
     Color color;
 } Point;
 
-int numPointsOnScreen = 0;
-
 Vector2 mousePos = {0, 0};
+
+int numPointsOnScreen = 0;
 Point points[MAX_NUM_POINTS] = {};
 
+const Color COLORS[] = {
+    RED, GREEN, BLUE, YELLOW, ORANGE, PURPLE,
+    DARKGRAY, LIGHTGRAY, WHITE, BLACK
+};
+const unsigned colorsNum = sizeof(COLORS)/sizeof(Color);
+Color selectedColor = COLORS[6];
+
+
 void m_DrawButton(Button button) {
-    DrawRectangleRounded(button.bounds, BTN_RADIUS, BTN_SEGMENTS, button.color);
-    DrawText(button.label, button.bounds.x + 20, button.bounds.y + 15, 20, WHITE);
+    bool isHovered = CheckCollisionPointRec(GetMousePosition(), button.bounds);
+
+    Color buttonColor = isHovered ? ColorAlpha(button.color, 0.80f) : button.color;
+    DrawRectangleRounded(button.bounds, BTN_RADIUS, BTN_SEGMENTS, buttonColor);
+
+    DrawText(
+        button.label,
+        button.bounds.x + (int)(BTN_WIDTH/2) - (int)(MeasureText(button.label, FONT_SIZE)/2),
+        button.bounds.y + (button.bounds.height / 2) - 10,
+        FONT_SIZE, WHITE
+    );
 }
+
 
 void m_DrawPoints(void){
     for (int i = 0; i < numPointsOnScreen; i++) {
-        const int size = (i==0 || i==numPointsOnScreen-1) ? 10 : 5;
+        const int firstOrLast = (i==0 || i==numPointsOnScreen-1);
+
         if (points[i].color.a > 0){
-            DrawCircleV(points[i].position, size, points[i].color);
+            DrawCircleV(
+                points[i].position,
+                firstOrLast ? 7 : 5,
+                firstOrLast ? selectedColor : points[i].color
+            );
         }
     }
 }
 
+
 void m_DrawPointCount(Vector2 position) {
     char count[4]; 
     snprintf(count, sizeof(count), "%d", numPointsOnScreen);
-    DrawText(count, position.x, position.y, 20, WHITE);
+    DrawText(count, position.x, position.y, FONT_SIZE, WHITE);
 }
 
+
 void m_DrawBoard(Rectangle *board){ DrawRectangleRec(*board, RAYWHITE); }
+
 
 void m_ClearBoard(void){
     numPointsOnScreen = 0;
@@ -132,6 +166,7 @@ void m_DrawLine(Vector2 start, Vector2 end, Color color){
     }
 }
 
+
 void m_PaintPointOnBoard(void){
     if (numPointsOnScreen < MAX_NUM_POINTS){
         points[numPointsOnScreen++] = (Point){
@@ -145,16 +180,19 @@ void m_PaintPointOnBoard(void){
     }
 }
 
+
 void m_ClickCallback(Vector2 mouse, Rectangle *rect, void (*callback)()){
     if (CheckCollisionPointRec(mouse, *rect)) callback();
 }
 
+
 void m_DrawEdges(void) {
     for (int i = 0; i < numPointsOnScreen - 1; i++) {
         int nextIndex = (i + 1) % numPointsOnScreen;
-        m_DrawLine(points[i].position, points[nextIndex].position, DARKGRAY);
+        m_DrawLine(points[i].position, points[nextIndex].position, selectedColor);
     }
 }
+
 
 int m_CompareIntersection(const void *a, const void *b) {
     int x1 = *(int *)a;
@@ -197,11 +235,10 @@ void m_ScanlineFill(void) {
             int xStart = intersections[i];
             int xEnd = intersections[i + 1];
 
-            m_DrawLine((Vector2){xStart, (float)y}, (Vector2){xEnd, (float)y}, DARKGRAY);
+            m_DrawLine((Vector2){xStart, (float)y}, (Vector2){xEnd, (float)y}, selectedColor);
         }
     }
 }
-
 
 
 void m_PressShiftMousePos(){
@@ -227,10 +264,34 @@ void m_PressShiftMousePos(){
 
 void m_CompletePolygon(void){
     if (numPointsOnScreen > 1) {
-        m_DrawLine(points[numPointsOnScreen-1].position, points[0].position, DARKGRAY);
+        m_DrawLine(points[numPointsOnScreen-1].position, points[0].position, selectedColor);
         m_ScanlineFill();
     }
 }
+
+
+void m_DrawColorPicker(Vector2 position) {
+    DrawRectangle(position.x-1, position.y-1, COLOR_BOX_SIZE*5+2, COLOR_BOX_SIZE*2+2, WHITE);
+    for (unsigned i = 0; i < colorsNum; i++) {
+        int x = position.x + (i % 5) * COLOR_BOX_SIZE;
+        int y = position.y + (int)(i / 5) * COLOR_BOX_SIZE;
+        DrawRectangle(x, y, COLOR_BOX_SIZE, COLOR_BOX_SIZE, COLORS[i]);
+    }
+}
+
+
+Color m_GetSelectedColor(Vector2 mousePos, Vector2 pickerPos) {
+    int boxX = (mousePos.x - pickerPos.x) / COLOR_BOX_SIZE;
+    int boxY = (mousePos.y - pickerPos.y) / COLOR_BOX_SIZE;
+
+    if (boxX >= 0 && boxX < 5 && boxY >= 0 && boxY < (colorsNum / 5 + 1)) {
+        int index = boxY * 5 + boxX;
+        if (index < colorsNum) return COLORS[index];
+    }
+
+    return selectedColor;
+}
+
 
 int main(void) {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Scanline Raylib");
@@ -251,6 +312,8 @@ int main(void) {
         .color = BLUE,
         .label = "Fill"
     };
+    
+    Vector2 colorPickerPosition = { fillButton.bounds.x + GAP + BTN_WIDTH, GAP };
 
     // tamanho fixo por enquanto
     // basta colocar dentro do loop e usar getScreen(Width|Height)()
@@ -264,20 +327,21 @@ int main(void) {
     while (!WindowShouldClose()) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             mousePos = GetMousePosition();
+            selectedColor = m_GetSelectedColor(mousePos, colorPickerPosition);
+
             m_PressShiftMousePos();
             m_ClickCallback(mousePos, &clearButton.bounds, m_ClearBoard);
             m_ClickCallback(mousePos, &board, m_PaintPointOnBoard);
         }
 
         BeginDrawing();
-            ClearBackground(LIGHTGRAY);
+            ClearBackground(BLACK);
         
             m_DrawPointCount((Vector2){ SCREEN_WIDTH-40, (int)(BTN_HEIGHT / 2) });
-            
             m_DrawBoard(&board);
             m_DrawButton(clearButton);
             m_DrawButton(fillButton);
-
+            m_DrawColorPicker(colorPickerPosition);
             m_DrawPoints();
 
             m_ClickCallback(mousePos, &fillButton.bounds, m_CompletePolygon);
